@@ -317,21 +317,40 @@
 </div>
 
 <script>
+// Cumulative history: each key holds an array of runs.
 const results = {};
 
 function render(id, data) {
   const el = document.getElementById(id);
   el.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
   const key = id.replace(/^out-/, "");
-  results[key] = { timestamp: new Date().toISOString(), data };
+  if (!Array.isArray(results[key])) results[key] = [];
+  // Dedupe: a render() call during progressive updates (e.g. "probing…" → final)
+  // should replace the in-flight entry, not append a new one.
+  const last = results[key][results[key].length - 1];
+  const isInFlight = (d) => {
+    if (!d) return false;
+    if (Array.isArray(d)) return d.some(x => x && (x.result === "probing…" || x.result === "scanning…"));
+    return false;
+  };
+  if (last && isInFlight(last.data)) {
+    last.data = data;
+    last.timestamp = new Date().toISOString();
+  } else {
+    results[key].push({ timestamp: new Date().toISOString(), data });
+  }
+  const totalRuns = Object.values(results).reduce((a, arr) => a + arr.length, 0);
   document.getElementById("out-all").textContent = JSON.stringify(results, null, 2);
-  document.getElementById("log-count").textContent = Object.keys(results).length + " entries";
+  document.getElementById("log-count").textContent =
+    `${Object.keys(results).length} cards · ${totalRuns} total runs`;
   const interpEl = document.getElementById("interp-" + key);
   if (interpEl && interpreters[key]) {
     try {
       const r = interpreters[key](data);
+      const runCount = results[key].length;
+      const runNote = runCount > 1 ? ` <span style="opacity:0.6;font-size:10px;">(run ${runCount})</span>` : "";
       interpEl.className = "interp" + (r.tone ? " " + r.tone : "");
-      interpEl.innerHTML = r.html;
+      interpEl.innerHTML = r.html + runNote;
     } catch (e) { /* ignore interp errors */ }
   }
 }
@@ -973,7 +992,7 @@ function clearAll() {
     d.textContent = "Not yet collected.";
   });
   document.getElementById("out-all").textContent = "Empty.";
-  document.getElementById("log-count").textContent = "0 entries";
+  document.getElementById("log-count").textContent = "0 cards · 0 total runs";
 }
 </script>
 </body>
