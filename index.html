@@ -318,26 +318,27 @@
 
 <script>
 // Cumulative history: each key holds an array of runs.
+// Each run is tagged with a runId so progressive updates (probing → done)
+// can replace the in-flight entry instead of appending a new one.
 const results = {};
+let _runIdCounter = 0;
+function nextRunId() { return ++_runIdCounter; }
+function snapshot(data) {
+  if (data === null || typeof data !== "object") return data;
+  try { return JSON.parse(JSON.stringify(data)); } catch { return data; }
+}
 
-function render(id, data) {
+function render(id, data, runId) {
   const el = document.getElementById(id);
   el.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
   const key = id.replace(/^out-/, "");
   if (!Array.isArray(results[key])) results[key] = [];
-  // Dedupe: a render() call during progressive updates (e.g. "probing…" → final)
-  // should replace the in-flight entry, not append a new one.
   const last = results[key][results[key].length - 1];
-  const isInFlight = (d) => {
-    if (!d) return false;
-    if (Array.isArray(d)) return d.some(x => x && (x.result === "probing…" || x.result === "scanning…"));
-    return false;
-  };
-  if (last && isInFlight(last.data)) {
-    last.data = data;
+  if (runId != null && last && last.runId === runId) {
+    last.data = snapshot(data);
     last.timestamp = new Date().toISOString();
   } else {
-    results[key].push({ timestamp: new Date().toISOString(), data });
+    results[key].push({ timestamp: new Date().toISOString(), data: snapshot(data), runId });
   }
   const totalRuns = Object.values(results).reduce((a, arr) => a + arr.length, 0);
   document.getElementById("out-all").textContent = JSON.stringify(results, null, 2);
@@ -390,12 +391,12 @@ const interpreters = {
       html: `<strong>Silently collected:</strong> ${bits.join(" · ")}.<br><br><strong style="color:var(--err)">High-entropy fingerprint signals:</strong> ${heavy.join(" · ") || "(none)"}.<br><br>Combined, these produce a near-unique identifier for your device — <em>no permission required, no way to block at the browser layer</em>. Canvas, WebGL renderer, audio, and fonts together typically contribute 30+ bits of entropy, which is enough to single most browsers out among hundreds of thousands. Cross-check your own entropy at <a href="https://coveryourtracks.eff.org" style="color:var(--accent)">EFF Cover Your Tracks</a>.` };
   },
   webrtc(d) {
-    if (d.error) return { tone: "bad", html: `Error: ${d.message}` };
+    if (d.error) return { tone: "bad", html: `Error: ${esc(d.message)}` };
     if (d.ipv4 && d.ipv4.length) {
-      return { tone: "bad", html: `<strong>Your real local IP leaked:</strong> ${d.ipv4.join(", ")}. Any website can read this silently — no permission needed. This reveals your LAN subnet.` };
+      return { tone: "bad", html: `<strong>Your real local IP leaked:</strong> <code>${esc(d.ipv4.join(", "))}</code>. This reveals your LAN subnet to any site.<br><br><strong>Why it leaked:</strong> Chrome's default mDNS obfuscation is silently <em>disabled on origins that have been granted camera or microphone permission</em>. If you (or any site at this origin) previously granted camera/mic, WebRTC now exposes the real IP here. Revoke the grant via browser site-settings to restore mDNS protection.` };
     }
     if (d.mdnsHostnames && d.mdnsHostnames.length) {
-      return { tone: "good", html: `<strong>Chrome is protecting you.</strong> Real IPs hidden behind ${d.mdnsHostnames.length} mDNS hostname(s) (e.g. <code>${(d.mdnsHostnames[0]||"").slice(0,20)}…</code>). The classic WebRTC leak is closed.` };
+      return { tone: "good", html: `<strong>Chrome is protecting you.</strong> Real IPs hidden behind ${d.mdnsHostnames.length} mDNS hostname(s) (e.g. <code>${esc((d.mdnsHostnames[0]||"").slice(0,20))}…</code>). The classic WebRTC leak is closed for this origin — confirming that this origin has <em>not</em> been granted camera/microphone permission (if it had, real IPs would appear above instead).` };
     }
     return { tone: "warn", html: "No ICE candidates gathered — unusual." };
   },
@@ -704,6 +705,7 @@ async function runPassive() {
 
 // --- WebRTC local IP leak ---
 async function runWebRTC() {
+  const runId = nextRunId();
   const candidates = [];
   const ipv4 = new Set();
   const ipv6 = new Set();
@@ -711,7 +713,10 @@ async function runWebRTC() {
   try {
     const pc = new RTCPeerConnection({ iceServers: [] });
     pc.createDataChannel("");
+    let done = false;
     const finish = () => {
+      if (done) return;
+      done = true;
       render("out-webrtc", {
         note: mdnsHosts.size && !ipv4.size
           ? "Chrome is protecting you: real IPs hidden behind mDNS .local hostnames. Disable chrome://flags/#enable-webrtc-hide-local-ips-with-mdns to see real IPs."
@@ -720,7 +725,7 @@ async function runWebRTC() {
         ipv6: Array.from(ipv6),
         mdnsHostnames: Array.from(mdnsHosts),
         rawCandidates: candidates,
-      });
+      }, runId);
       try { pc.close(); } catch(_) {}
     };
     pc.onicecandidate = e => {
@@ -741,9 +746,10 @@ async function runWebRTC() {
 
 // --- Local Network Access probe ---
 async function runLNA() {
+  const runId = nextRunId();
   const targets = document.getElementById("lna-targets").value.split(",").map(s => s.trim()).filter(Boolean);
   const out = targets.map(url => ({ url, result: "probing…", ms: null }));
-  render("out-lna", out);
+  render("out-lna", out, runId);
   await Promise.all(targets.map(async (url, i) => {
     const t0 = performance.now();
     try {
@@ -752,7 +758,7 @@ async function runLNA() {
     } catch (e) {
       out[i] = { url, result: e.name, message: e.message, ms: Math.round(performance.now() - t0) };
     }
-    render("out-lna", out);
+    render("out-lna", out, runId);
   }));
 }
 
@@ -766,13 +772,14 @@ const CHROME_UNSAFE_PORTS = new Set([
   1723,2049,3659,4045,4190,5060,5061,6000,6566,6665,6666,6667,6668,6669,6697,10080
 ]);
 async function runPortScan() {
+  const runId = nextRunId();
   const ports = document.getElementById("ports").value.split(",").map(s => parseInt(s.trim())).filter(Boolean);
   const out = ports.map(port => ({ port, result: "scanning…", ms: null }));
-  render("out-ports", out);
+  render("out-ports", out, runId);
   await Promise.all(ports.map(async (port, i) => {
     if (CHROME_UNSAFE_PORTS.has(port)) {
       out[i] = { port, result: "browser-blocked", guess: "ERR_UNSAFE_PORT (Chrome refuses regardless of state)", ms: 0 };
-      render("out-ports", out);
+      render("out-ports", out, runId);
       return;
     }
     const url = `http://127.0.0.1:${port}/`;
@@ -785,7 +792,7 @@ async function runPortScan() {
       const guess = ms < 200 ? "closed (fast fail)" : ms >= 1500 ? "filtered (timeout)" : "unknown";
       out[i] = { port, result: e.name, guess, ms };
     }
-    render("out-ports", out);
+    render("out-ports", out, runId);
   }));
 }
 
