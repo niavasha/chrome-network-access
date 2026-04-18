@@ -72,6 +72,10 @@ Chrome 130+ rolled out **Local Network Access** prompts on ordinary shopping sit
 
 This page reproduces each probe so you can see exactly what gets exposed — and confirm the defences are working. Grant or deny with confidence.
 
+## Threat model
+
+The tool claims "nothing is collected" and "the interpretation is accurate". See [THREAT_MODEL.md](THREAT_MODEL.md) for the enumerated threats, mitigations, and residual risks — including how to verify for yourself that the served page hasn't been tampered with.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

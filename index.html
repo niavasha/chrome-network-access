@@ -190,6 +190,16 @@
     <details><summary>Raw JSON</summary><pre id="out-ports">Not yet collected.</pre></details>
   </div>
 
+  <!-- Browser-blocked ports (defence showcase) -->
+  <div class="card">
+    <h3>Chrome's Blocked-Port List <span class="status ok">defence</span></h3>
+    <p>~40 ports Chrome refuses to let any website connect to via <code>fetch()</code>, no matter what. A built-in defence that predates LNA by 15+ years.</p>
+    <button onclick="runBlockedPortsDemo()">Try probing SSH (22)</button>
+    <button class="secondary" onclick="showBlockedList()">Show full list</button>
+    <div class="interp" id="interp-blocked">Chrome blocks these to stop HTTP smuggling attacks against non-HTTP protocols. Click to see it refuse.</div>
+    <details><summary>Raw JSON</summary><pre id="out-blocked">Not yet collected.</pre></details>
+  </div>
+
   <!-- Geolocation -->
   <div class="card">
     <h3>Geolocation <span class="status pending">prompt</span></h3>
@@ -330,6 +340,13 @@ function err(id, e) {
   render(id, { error: e.name || "Error", message: e.message || String(e) });
 }
 
+// Escape any user-supplied string before inserting into innerHTML
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
 // --- Interpreters: return { tone: 'good'|'warn'|'bad', html: string } ---
 const interpreters = {
   passive(d) {
@@ -360,7 +377,8 @@ const interpreters = {
     const isLocalhost = url => /(^|\/\/)(localhost|127\.0\.0\.1|\[::1\])(:|\/)/.test(url);
     let lanAlive = 0, lanAbsent = 0, lhClosed = 0, lhFiltered = 0, readOK = 0;
     const pills = d.map(r => {
-      if (r.result === "probing…") return `<span class="pill closed">${r.url}: probing…</span>`;
+      const safeUrl = esc(r.url);
+      if (r.result === "probing…") return `<span class="pill closed">${safeUrl}: probing…</span>`;
       const local = isLocalhost(r.url);
       const ms = r.ms;
       let label = "unknown", cls = "closed";
@@ -371,8 +389,8 @@ const interpreters = {
       } else if (ms != null && ms < 100) {
         if (local) { label = `port closed (${ms}ms)`; cls = "closed"; lhClosed++; }
         else { label = `live on LAN (${ms}ms, CORS-blocked)`; cls = "alive"; lanAlive++; }
-      } else { label = `${r.result} ${ms}ms`; cls = "closed"; }
-      return `<span class="pill ${cls}">${r.url.replace(/^https?:\/\//,"")}: ${label}</span>`;
+      } else { label = `${esc(r.result)} ${ms}ms`; cls = "closed"; }
+      return `<span class="pill ${cls}">${esc(r.url.replace(/^https?:\/\//,""))}: ${label}</span>`;
     }).join(" ");
     const parts = [];
     if (lanAlive) parts.push(`<strong>${lanAlive} live device(s) on your LAN</strong>`);
@@ -381,8 +399,10 @@ const interpreters = {
     if (lhFiltered) parts.push(`${lhFiltered} filtered port(s) on your machine`);
     if (readOK) parts.push(`<strong>${readOK} device(s) returned a readable response</strong>`);
     const summary = parts.length ? parts.join(" · ") : "no data";
+    const gateway = d.find(r => !isLocalhost(r.url) && r.ms != null && r.ms < 100 && r.result !== "reachable" && r.result !== "TimeoutError");
+    const gatewayStr = gateway ? esc(gateway.url.replace(/^https?:\/\//,"").replace(/\/$/,"")) : "";
     const note = lanAlive > 0
-      ? `<br>${summary}. A tracker can say "this browser sits behind a gateway at <code>${d.find(r => !isLocalhost(r.url) && r.ms != null && r.ms < 100 && r.result !== "reachable" && r.result !== "TimeoutError")?.url.replace(/^https?:\/\//,"").replace(/\/$/,"")}</code>" — a stable signal across VPN/IP changes. But note: <em>CORS-blocked</em> means they learned the IP exists, not what's on it.`
+      ? `<br>${summary}. A tracker can say "this browser sits behind a gateway at <code>${gatewayStr}</code>" — a stable signal across VPN/IP changes. But note: <em>CORS-blocked</em> means they learned the IP exists, not what's on it.`
       : `<br>${summary}. No live LAN devices found on the probed addresses. Try adding <code>http://192.168.[your-subnet].1/</code> after checking the WebRTC card.`;
     return { tone: readOK > 0 ? "bad" : lanAlive > 0 ? "warn" : "good", html: pills + note };
   },
@@ -405,6 +425,26 @@ const interpreters = {
       html: pills + `<br><strong>${open.length}</strong> open · <strong>${refused.length}</strong> closed · <strong>${filtered.length}</strong> filtered${blockedNote}. Any open service on 127.0.0.1 is discoverable by every site you visit.`
     };
   },
+  blocked(d) {
+    if (Array.isArray(d)) {
+      const pills = d.map(r => {
+        const cls = r.browserBlocked ? "closed" : "open";
+        const verdict = r.browserBlocked
+          ? `<strong>refused by Chrome (${r.ms}ms)</strong>`
+          : `reached network (${r.ms}ms)`;
+        return `<span class="pill ${cls}">${r.port} (${esc(r.name)}): ${verdict}</span>`;
+      }).join(" ");
+      const contrast = d.find(r => !r.browserBlocked);
+      const note = contrast
+        ? `<br>Contrast: port <code>${contrast.port}</code> (${esc(contrast.name)}) is <em>not</em> on Chrome's blocklist, so the fetch actually goes out on the wire. That's why fraud scripts target databases, dev servers, and debug ports — none of those are on the blocklist.`
+        : "";
+      return { tone: "good", html: pills + note };
+    }
+    if (d.ports) {
+      return { tone: "good", html: `<strong>${d.ports.length} ports</strong> Chrome refuses to connect to from any origin: <code>${d.ports.join(", ")}</code>. These are blocked to prevent the browser being weaponised for HTTP smuggling against non-HTTP services (SSH, SMTP, IMAP, IRC, X11, etc.) — a defence that's been in Chrome since its earliest builds.` };
+    }
+    return { tone: "warn", html: "No data." };
+  },
   geo(d) {
     if (d.error) return { tone: "good", html: `Blocked or unavailable: ${d.message}. Good — location stays private.` };
     return { tone: "bad", html: `Location shared: <strong>${d.latitude.toFixed(4)}, ${d.longitude.toFixed(4)}</strong> (±${Math.round(d.accuracyMeters)}m). This is GPS-accurate.` };
@@ -414,35 +454,35 @@ const interpreters = {
     if (d.permission === "denied") return { tone: "good", html: "Denied. Good — no background notifications." };
     return { tone: "good", html: `Permission state: <strong>${d.permission || "default"}</strong>.` };
   },
+  clipboard(d) {
+    if (d.error) return { tone: "good", html: `Blocked: ${esc(d.message)}.` };
+    return { tone: "bad", html: `<strong>Read ${d.length} characters</strong> from your clipboard: <code>${esc((d.preview||"").slice(0,80))}</code>` };
+  },
   media(d) {
-    if (d.error) return { tone: "good", html: `Denied/unavailable: ${d.message}.` };
+    if (d.error) return { tone: "good", html: `Denied/unavailable: ${esc(d.message)}.` };
     const withLabels = (d.devices || []).filter(x => !x.label.startsWith("("));
     if (withLabels.length) {
-      const names = withLabels.map(x => x.label).slice(0, 3).join(", ");
+      const names = withLabels.map(x => esc(x.label)).slice(0, 3).join(", ");
       return { tone: "bad", html: `<strong>${withLabels.length} device labels exposed:</strong> ${names}${withLabels.length > 3 ? "…" : ""}. Device names can uniquely identify you (e.g. "Harry's MacBook Pro Microphone").` };
     }
     return { tone: "warn", html: `${d.devices?.length || 0} devices enumerated without labels. Labels only appear after you grant camera/mic permission.` };
   },
-  clipboard(d) {
-    if (d.error) return { tone: "good", html: `Blocked: ${d.message}.` };
-    return { tone: "bad", html: `<strong>Read ${d.length} characters</strong> from your clipboard: <code>${(d.preview||"").replace(/[<>&]/g,"?").slice(0,80)}</code>` };
-  },
   bt(d) {
-    if (d.error) return { tone: "good", html: `No device picked or blocked: ${d.message}.` };
-    return { tone: "warn", html: `Paired: <strong>${d.name || "(unnamed)"}</strong> (id ${d.id?.slice(0,12)}…). Site can now scan characteristics.` };
+    if (d.error) return { tone: "good", html: `No device picked or blocked: ${esc(d.message)}.` };
+    return { tone: "warn", html: `Paired: <strong>${esc(d.name || "(unnamed)")}</strong> (id ${esc(d.id?.slice(0,12) || "")}…). Site can now scan characteristics.` };
   },
   usb(d) {
-    if (d.error) return { tone: "good", html: `No device picked or blocked: ${d.message}.` };
-    return { tone: "bad", html: `USB exposed: <strong>${d.manufacturerName || "?"} ${d.productName || ""}</strong> · VID <code>${d.vendorId?.toString(16).padStart(4,"0")}</code> PID <code>${d.productId?.toString(16).padStart(4,"0")}</code> · serial <code>${d.serialNumber || "(none)"}</code>. Serial is a stable device ID.` };
+    if (d.error) return { tone: "good", html: `No device picked or blocked: ${esc(d.message)}.` };
+    return { tone: "bad", html: `USB exposed: <strong>${esc(d.manufacturerName || "?")} ${esc(d.productName || "")}</strong> · VID <code>${d.vendorId?.toString(16).padStart(4,"0")}</code> PID <code>${d.productId?.toString(16).padStart(4,"0")}</code> · serial <code>${esc(d.serialNumber || "(none)")}</code>. Serial is a stable device ID.` };
   },
   serial(d) {
-    if (d.error) return { tone: "good", html: `No port picked: ${d.message}.` };
-    return { tone: "warn", html: `Serial port info: <code>${JSON.stringify(d.info)}</code>` };
+    if (d.error) return { tone: "good", html: `No port picked: ${esc(d.message)}.` };
+    return { tone: "warn", html: `Serial port info: <code>${esc(JSON.stringify(d.info))}</code>` };
   },
   hid(d) {
-    if (d.error) return { tone: "good", html: `No device picked: ${d.message}.` };
+    if (d.error) return { tone: "good", html: `No device picked: ${esc(d.message)}.` };
     if (!Array.isArray(d) || !d.length) return { tone: "good", html: "No devices." };
-    return { tone: "warn", html: `${d.length} HID device(s): ${d.map(x => x.productName || "unnamed").join(", ")}` };
+    return { tone: "warn", html: `${d.length} HID device(s): ${d.map(x => esc(x.productName || "unnamed")).join(", ")}` };
   },
   battery(d) {
     if (d.error) return { tone: "good", html: `Unsupported — ${d.message}. Good: API was removed because it enabled cross-site tracking.` };
@@ -599,6 +639,34 @@ async function runPortScan() {
     }
     render("out-ports", out);
   }));
+}
+
+// --- Browser blocked ports demo ---
+async function runBlockedPortsDemo() {
+  const demos = [
+    { port: 22, name: "SSH" },
+    { port: 25, name: "SMTP" },
+    { port: 3306, name: "MySQL (not blocked, for contrast)" },
+  ];
+  const out = [];
+  for (const { port, name } of demos) {
+    const t0 = performance.now();
+    try {
+      await fetch(`http://127.0.0.1:${port}/`, { mode: "no-cors", cache: "no-store", signal: AbortSignal.timeout(1500) });
+      out.push({ port, name, result: "connection attempted", browserBlocked: false, ms: Math.round(performance.now() - t0) });
+    } catch (e) {
+      const ms = Math.round(performance.now() - t0);
+      const blocked = CHROME_UNSAFE_PORTS.has(port);
+      out.push({ port, name, result: e.name, message: e.message, browserBlocked: blocked, ms });
+    }
+  }
+  render("out-blocked", out);
+}
+function showBlockedList() {
+  render("out-blocked", {
+    note: "Chrome's hardcoded unsafe-port list. Any fetch() to 127.0.0.1:<port> — or any other host — returns ERR_UNSAFE_PORT immediately, without a TCP connection attempt.",
+    ports: Array.from(CHROME_UNSAFE_PORTS).sort((a,b)=>a-b),
+  });
 }
 
 // --- Geolocation ---
