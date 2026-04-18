@@ -140,7 +140,21 @@
   <!-- WebRTC IP leak -->
   <div class="card">
     <h3>Local IPs via WebRTC <span class="status warn">silent</span></h3>
-    <p>Enumerates local network interfaces using RTCPeerConnection ICE candidates. No prompt.</p>
+    <p>Enumerates local network interfaces using RTCPeerConnection ICE candidates. No prompt — but what gets returned depends on permissions granted to this origin.</p>
+    <details style="margin-bottom: 8px;"><summary>Side effect: granting camera or mic silently exposes your real local IP</summary>
+      <div style="color: var(--muted); font-size: 12px; line-height: 1.55; padding: 8px 0 0;">
+        Chrome 79+ hides local IPs behind mDNS hostnames (<code>uuid.local</code>) for untrusted origins. But there's a silent exception: <strong>origins that have been granted camera or microphone permission get your real IP</strong> — IPv4 and IPv6 — no additional prompt. Chrome's reasoning: peer-to-peer video calling (Zoom, Meet, Jitsi) needs real IPs for optimal connectivity. Fair for a video-call site; a significant silent downgrade for a one-time "upload a selfie for KYC" site.
+        <br><br><strong>What this enables:</strong>
+        <ul style="margin: 6px 0 6px 18px; padding: 0;">
+          <li><strong>VPN bypass.</strong> WebRTC binds to all interfaces by default, so even on a VPN, real LAN IP leaks to any origin with camera grant. Classic WebRTC VPN-leak attack.</li>
+          <li><strong>Subnet disclosure for targeted LAN recon.</strong> Real IP reveals your exact subnet (e.g. <code>192.168.1.x</code>), letting scripts target your gateway and known device IPs directly instead of guessing.</li>
+          <li><strong>IPv6 as stable device ID.</strong> SLAAC-derived IPv6 often encodes MAC-derived bits and is stable per machine — a cross-site tracking signal that's hard to rotate.</li>
+          <li><strong>Corporate/intranet deanonymisation.</strong> A site that gets camera grant learns whether you're on <code>10.x</code>/<code>172.16.x</code> corporate ranges, enabling DNS-rebinding attacks against internal services.</li>
+          <li><strong>Recon chains.</strong> Camera grant → real IP → port scan of your actual subnet → DNS-rebinding against discovered services. One "innocent" permission unlocks the whole chain.</li>
+        </ul>
+        <strong style="color: var(--ok);">The fix:</strong> don't grant camera/mic to sites that don't genuinely need it for live video. Revoke it after one-off uses (profile photos, KYC selfies). Or install a privacy extension that forces WebRTC to only use the default public-facing interface.
+      </div>
+    </details>
     <button onclick="runWebRTC()">Discover</button>
     <div class="interp" id="interp-webrtc">Chrome 79+ hides real IPs behind mDNS by default. Click Discover to see whether your browser still leaks.</div>
     <details><summary>Raw JSON</summary><pre id="out-webrtc">Not yet collected.</pre></details>
@@ -222,9 +236,14 @@
   <div class="card">
     <h3>Camera & Microphone <span class="status pending">prompt</span></h3>
     <p>Lists input devices. Labels only populate after permission grant.</p>
+    <details style="margin-bottom: 8px;"><summary>⚠ Hidden side effect: grants real-IP exposure via WebRTC</summary>
+      <div style="color: var(--muted); font-size: 12px; line-height: 1.55; padding: 8px 0 0;">
+        Granting camera or microphone permission to this origin <strong>also silently disables Chrome's mDNS IP protection</strong> for this origin — meaning WebRTC will now expose your real LAN IPv4 and IPv6 (plus bypass any VPN at the LAN layer). See the <em>Local IPs via WebRTC</em> card for the full attack surface.  Run Discover before granting, then grant and re-run Discover — you'll see the difference.
+      </div>
+    </details>
     <button onclick="runMedia('both')">Camera + Mic</button>
     <button class="secondary" onclick="runMedia('enumerate')">Enumerate only</button>
-    <div class="interp" id="interp-media">"Enumerate only" reveals device counts without a prompt. Granting camera/mic reveals device names too.</div>
+    <div class="interp" id="interp-media">"Enumerate only" reveals device counts without a prompt. Granting camera/mic reveals device names <em>and</em> disables WebRTC mDNS protection.</div>
     <details><summary>Raw JSON</summary><pre id="out-media">Not yet collected.</pre></details>
   </div>
 
