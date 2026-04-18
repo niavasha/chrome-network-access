@@ -101,6 +101,19 @@
 <h1>Browser Permissions & Network Access Probe</h1>
 <h2>A local page to see what data modern browser APIs expose</h2>
 
+<div style="background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin-bottom: 16px; font-size: 14px; line-height: 1.6;">
+  <p style="margin: 0 0 10px;"><strong>Understand your browser. Make informed permission choices.</strong></p>
+  <p style="margin: 0 0 10px; color: var(--muted);">
+    Modern browsers expose a rich set of APIs — geolocation, camera, Bluetooth, USB, and the new Chrome <em>Local Network Access</em> prompt — and each click of "Allow" shares something specific with the site. Most of the time the site has a legitimate need; sometimes it doesn't. Either way, the choice is easier when you know exactly what the data looks like.
+  </p>
+  <p style="margin: 0; color: var(--muted);">
+    This is a <strong>transparency tool</strong>: it runs each API against your own browser, shows you the real output, and explains what it reveals. Use it to sanity-check your defaults, test how your Chrome responds to the new LNA prompt, and see whether your browser is correctly blocking the classic silent leaks (WebRTC, fingerprinting entropy).
+  </p>
+  <p style="margin: 10px 0 0; color: var(--muted);">
+    <strong style="color: var(--ok);">The good news:</strong> modern Chrome defends you in depth. Even when you grant Local Network Access, sites still can't read responses from devices that don't opt in with CORS headers. Real local IPs are hidden behind mDNS hostnames by default. The prompts exist so you can make an informed choice — and the choice usually leaks less than you'd fear.
+  </p>
+</div>
+
 <div style="background: rgba(74,222,128,.08); border: 1px solid rgba(74,222,128,.3); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; line-height: 1.55;">
   <strong style="color: var(--ok);">🔒 Privacy: nothing is collected, stored, or transmitted.</strong><br>
   This page runs entirely in your browser. No telemetry, no analytics, no cookies, no remote fetches to any server we control — all probe results stay on your device and vanish when you close the tab. There is no backend. You can verify by reading
@@ -137,6 +150,17 @@
   <div class="card">
     <h3>Local Network Probe <span class="status warn">silent/LNA</span></h3>
     <p>Attempt to fetch common private addresses. In Chrome 130+ served from a public origin, this triggers the Local Network Access prompt.</p>
+    <details style="margin-bottom: 8px;"><summary>Why this permission exists (and why it's a good thing)</summary>
+      <div style="color: var(--muted); font-size: 12px; line-height: 1.55; padding: 8px 0 0;">
+        Before LNA, any website you visited could silently send HTTP requests to your router (<code>192.168.1.1</code>), printers, NAS, smart TVs, and <code>localhost</code> — no prompt, no log, nothing. Attackers abused this for years:
+        <ul style="margin: 6px 0 6px 18px; padding: 0;">
+          <li><strong>Router CSRF</strong> — malicious ads on any site could POST to your router's admin panel and change your DNS, redirecting all future traffic through an attacker.</li>
+          <li><strong>IoT exploitation</strong> — drive-by attacks against unpatched cameras, printers, and smart-home hubs reachable only on your LAN.</li>
+          <li><strong>Silent LAN reconnaissance</strong> — fingerprinting your network shape for ad-tech and fraud scoring.</li>
+        </ul>
+        <strong style="color: var(--ok);">LNA closes these attacks.</strong> Now a public site has to ask first, and even after you allow, the target device must opt in with a CORS header to expose its responses. That's defence in depth: <em>permission</em> + <em>same-origin policy</em> + <em>target opt-in</em>. This prompt showing up on shopping sites means Chrome is doing its job — surfacing something that used to happen invisibly so you can make an informed call.
+      </div>
+    </details>
     <input type="text" id="lna-targets" value="http://192.168.1.1/,http://192.168.0.1/,http://10.0.0.1/,http://localhost:80/,http://127.0.0.1:8080/">
     <button onclick="runLNA()">Probe</button>
     <div class="interp" id="interp-lna">Probe results will be interpreted here: live device / absent / refused.</div>
