@@ -344,21 +344,34 @@ const interpreters = {
   },
   lna(d) {
     if (!Array.isArray(d)) return { tone: "warn", html: "No data." };
+    const isLocalhost = url => /(^|\/\/)(localhost|127\.0\.0\.1|\[::1\])(:|\/)/.test(url);
+    let lanAlive = 0, lanAbsent = 0, lhClosed = 0, lhFiltered = 0, readOK = 0;
     const pills = d.map(r => {
       if (r.result === "probing…") return `<span class="pill closed">${r.url}: probing…</span>`;
+      const local = isLocalhost(r.url);
       const ms = r.ms;
       let label = "unknown", cls = "closed";
-      if (r.result === "reachable") { label = "alive (read OK)"; cls = "alive"; }
-      else if (r.result === "TimeoutError") { label = `silent drop (${ms}ms)`; cls = "closed"; }
-      else if (ms < 100) { label = `device present (${ms}ms preflight refused)`; cls = "alive"; }
-      else { label = `${r.result} ${ms}ms`; cls = "closed"; }
+      if (r.result === "reachable") { label = "read OK (rare)"; cls = "alive"; readOK++; }
+      else if (r.result === "TimeoutError") {
+        if (local) { label = `filtered (${ms}ms)`; cls = "closed"; lhFiltered++; }
+        else { label = `no host (${ms}ms silent drop)`; cls = "closed"; lanAbsent++; }
+      } else if (ms != null && ms < 100) {
+        if (local) { label = `port closed (${ms}ms)`; cls = "closed"; lhClosed++; }
+        else { label = `live on LAN (${ms}ms, CORS-blocked)`; cls = "alive"; lanAlive++; }
+      } else { label = `${r.result} ${ms}ms`; cls = "closed"; }
       return `<span class="pill ${cls}">${r.url.replace(/^https?:\/\//,"")}: ${label}</span>`;
     }).join(" ");
-    const alive = d.filter(r => r.ms != null && (r.ms < 100 && r.result !== "reachable" || r.result === "reachable")).length;
-    const note = alive > 0
-      ? `<br><strong>${alive} device(s) detected on your LAN.</strong> That's enough for a tracker to say "this browser sits behind a router with IP X" — a stable fingerprint across public IP changes.`
-      : "<br>No live devices on the probed addresses. Try adding <code>http://192.168.[your-subnet].1/</code> after checking the WebRTC card for your real subnet.";
-    return { tone: alive > 0 ? "warn" : "good", html: pills + note };
+    const parts = [];
+    if (lanAlive) parts.push(`<strong>${lanAlive} live device(s) on your LAN</strong>`);
+    if (lanAbsent) parts.push(`${lanAbsent} private IP(s) absent`);
+    if (lhClosed) parts.push(`${lhClosed} closed port(s) on your machine`);
+    if (lhFiltered) parts.push(`${lhFiltered} filtered port(s) on your machine`);
+    if (readOK) parts.push(`<strong>${readOK} device(s) returned a readable response</strong>`);
+    const summary = parts.length ? parts.join(" · ") : "no data";
+    const note = lanAlive > 0
+      ? `<br>${summary}. A tracker can say "this browser sits behind a gateway at <code>${d.find(r => !isLocalhost(r.url) && r.ms != null && r.ms < 100 && r.result !== "reachable" && r.result !== "TimeoutError")?.url.replace(/^https?:\/\//,"").replace(/\/$/,"")}</code>" — a stable signal across VPN/IP changes. But note: <em>CORS-blocked</em> means they learned the IP exists, not what's on it.`
+      : `<br>${summary}. No live LAN devices found on the probed addresses. Try adding <code>http://192.168.[your-subnet].1/</code> after checking the WebRTC card.`;
+    return { tone: readOK > 0 ? "bad" : lanAlive > 0 ? "warn" : "good", html: pills + note };
   },
   ports(d) {
     if (!Array.isArray(d)) return { tone: "warn", html: "No data." };
