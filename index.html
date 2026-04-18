@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Browser Permissions & Network Access Probe</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #262b36;
+    --text: #e6e8eb;
+    --muted: #8b93a1;
+    --accent: #4f8cff;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --err: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text);
+    max-width: 1200px; margin: 0 auto;
+  }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  h2 { margin: 0 0 12px; font-size: 15px; color: var(--muted); font-weight: 500; }
+  .sub { color: var(--muted); margin-bottom: 24px; font-size: 13px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .card h3 {
+    margin: 0 0 8px; font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+  button {
+    background: var(--accent); color: white;
+    border: none; padding: 7px 12px; border-radius: 6px;
+    font-size: 13px; cursor: pointer; margin-right: 6px; margin-bottom: 6px;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.secondary { background: #2a3040; }
+  input[type=text] {
+    background: #0a0d13; border: 1px solid var(--border); color: var(--text);
+    padding: 6px 8px; border-radius: 5px; font-size: 12px; width: 100%;
+    margin-bottom: 6px; font-family: ui-monospace, monospace;
+  }
+  pre {
+    background: #0a0d13; border: 1px solid var(--border);
+    padding: 10px; border-radius: 6px;
+    font-size: 11px; line-height: 1.45;
+    max-height: 280px; overflow: auto;
+    margin: 0; white-space: pre-wrap; word-break: break-word;
+  }
+  .status { font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+  .status.ok { background: rgba(74, 222, 128, 0.15); color: var(--ok); }
+  .status.warn { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
+  .status.err { background: rgba(248, 113, 113, 0.15); color: var(--err); }
+  .status.pending { background: rgba(139, 147, 161, 0.15); color: var(--muted); }
+  .interp {
+    background: rgba(79, 140, 255, 0.08);
+    border: 1px solid rgba(79, 140, 255, 0.25);
+    border-radius: 6px; padding: 8px 10px;
+    font-size: 12px; line-height: 1.5;
+    margin-bottom: 8px;
+  }
+  .interp.bad { background: rgba(248, 113, 113, 0.1); border-color: rgba(248, 113, 113, 0.3); }
+  .interp.good { background: rgba(74, 222, 128, 0.1); border-color: rgba(74, 222, 128, 0.3); }
+  .interp.warn { background: rgba(251, 191, 36, 0.1); border-color: rgba(251, 191, 36, 0.3); }
+  .interp strong { color: var(--text); }
+  .interp .pill {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 11px; margin-right: 4px; font-family: ui-monospace, monospace;
+  }
+  .interp .pill.open { background: rgba(248,113,113,.2); color: var(--err); }
+  .interp .pill.closed { background: rgba(139,147,161,.15); color: var(--muted); }
+  .interp .pill.alive { background: rgba(251,191,36,.2); color: var(--warn); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 11px; margin-top: 6px; }
+  details[open] summary { margin-bottom: 6px; }
+  #export-bar {
+    position: sticky; bottom: 0; background: var(--bg);
+    padding: 12px 0; border-top: 1px solid var(--border);
+    display: flex; gap: 8px; align-items: center;
+  }
+  .log-count { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>Browser Permissions & Network Access Probe</h1>
+<h2>A local page to see what data modern browser APIs expose</h2>
+
+<div style="background: rgba(74,222,128,.08); border: 1px solid rgba(74,222,128,.3); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; line-height: 1.55;">
+  <strong style="color: var(--ok);">🔒 Privacy: nothing is collected, stored, or transmitted.</strong><br>
+  This page runs entirely in your browser. No telemetry, no analytics, no cookies, no remote fetches to any server we control — all probe results stay on your device and vanish when you close the tab. There is no backend. You can verify by reading
+  <a href="https://github.com/niavasha/chrome-network-access" style="color: var(--accent);">the source</a>
+  or opening DevTools → Network and watching what requests leave (only the probes you deliberately click).
+  If you hit <em>Download JSON</em> the file saves locally; it is never uploaded.
+</div>
+
+<p class="sub">
+  Open in Chrome (or any Chromium browser). Click each button to trigger that API. Results and plain-English interpretation appear in each card. Raw JSON is collapsible underneath.
+</p>
+
+<div class="grid">
+
+  <!-- Passive fingerprint (no permission needed) -->
+  <div class="card">
+    <h3>Passive Fingerprint <span class="status ok">no prompt</span></h3>
+    <p>Data any page can read silently, no permission required.</p>
+    <button onclick="runPassive()">Collect</button>
+    <div class="interp" id="interp-passive">Click Collect to see what any website reads about you silently.</div>
+    <details><summary>Raw JSON</summary><pre id="out-passive">Not yet collected.</pre></details>
+  </div>
+
+  <!-- WebRTC IP leak -->
+  <div class="card">
+    <h3>Local IPs via WebRTC <span class="status warn">silent</span></h3>
+    <p>Enumerates local network interfaces using RTCPeerConnection ICE candidates. No prompt.</p>
+    <button onclick="runWebRTC()">Discover</button>
+    <div class="interp" id="interp-webrtc">Chrome 79+ hides real IPs behind mDNS by default. Click Discover to see whether your browser still leaks.</div>
+    <details><summary>Raw JSON</summary><pre id="out-webrtc">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Local network fetch -->
+  <div class="card">
+    <h3>Local Network Probe <span class="status warn">silent/LNA</span></h3>
+    <p>Attempt to fetch common private addresses. In Chrome 130+ served from a public origin, this triggers the Local Network Access prompt.</p>
+    <input type="text" id="lna-targets" value="http://192.168.1.1/,http://192.168.0.1/,http://10.0.0.1/,http://localhost:80/,http://127.0.0.1:8080/">
+    <button onclick="runLNA()">Probe</button>
+    <div class="interp" id="interp-lna">Probe results will be interpreted here: live device / absent / refused.</div>
+    <details><summary>Raw JSON</summary><pre id="out-lna">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Port scan on localhost -->
+  <div class="card">
+    <h3>Localhost Port Scan <span class="status warn">silent</span></h3>
+    <p>Times out vs connection-refused for common ports on 127.0.0.1. Timing reveals what's open.</p>
+    <input type="text" id="ports" value="22,80,443,3000,3306,5000,5432,5900,6379,8000,8080,8443,9000,11434,27017">
+    <button onclick="runPortScan()">Scan</button>
+    <div class="interp" id="interp-ports">Open ports on your machine are exposed to any website you visit.</div>
+    <details><summary>Raw JSON</summary><pre id="out-ports">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Geolocation -->
+  <div class="card">
+    <h3>Geolocation <span class="status pending">prompt</span></h3>
+    <p>GPS-accurate location if granted.</p>
+    <button onclick="runGeo()">Request</button>
+    <div class="interp" id="interp-geo">Click Request to ask for location access.</div>
+    <details><summary>Raw JSON</summary><pre id="out-geo">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Notifications -->
+  <div class="card">
+    <h3>Notifications <span class="status pending">prompt</span></h3>
+    <p>Ask permission to push system notifications.</p>
+    <button onclick="runNotif()">Request</button>
+    <div class="interp" id="interp-notif">Click Request to see the notification prompt.</div>
+    <details><summary>Raw JSON</summary><pre id="out-notif">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Camera / mic enumeration -->
+  <div class="card">
+    <h3>Camera & Microphone <span class="status pending">prompt</span></h3>
+    <p>Lists input devices. Labels only populate after permission grant.</p>
+    <button onclick="runMedia('both')">Camera + Mic</button>
+    <button class="secondary" onclick="runMedia('enumerate')">Enumerate only</button>
+    <div class="interp" id="interp-media">"Enumerate only" reveals device counts without a prompt. Granting camera/mic reveals device names too.</div>
+    <details><summary>Raw JSON</summary><pre id="out-media">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Clipboard -->
+  <div class="card">
+    <h3>Clipboard <span class="status pending">prompt</span></h3>
+    <p>Read current clipboard contents.</p>
+    <button onclick="runClipboard()">Read</button>
+    <div class="interp" id="interp-clipboard">Any site you grant this to can read whatever you've copied — including passwords from a password manager.</div>
+    <details><summary>Raw JSON</summary><pre id="out-clipboard">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Bluetooth -->
+  <div class="card">
+    <h3>Web Bluetooth <span class="status pending">prompt</span></h3>
+    <p>Opens chooser for nearby BLE devices.</p>
+    <button onclick="runBluetooth()">Scan</button>
+    <div class="interp" id="interp-bt">Pick a device in the chooser to see what info is exposed.</div>
+    <details><summary>Raw JSON</summary><pre id="out-bt">Not yet collected.</pre></details>
+  </div>
+
+  <!-- USB -->
+  <div class="card">
+    <h3>WebUSB <span class="status pending">prompt</span></h3>
+    <p>Opens chooser for USB devices.</p>
+    <button onclick="runUSB()">Request Device</button>
+    <div class="interp" id="interp-usb">Granting exposes vendor/product/serial — enough to uniquely identify hardware.</div>
+    <details><summary>Raw JSON</summary><pre id="out-usb">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Serial -->
+  <div class="card">
+    <h3>Web Serial <span class="status pending">prompt</span></h3>
+    <p>Opens chooser for serial ports.</p>
+    <button onclick="runSerial()">Request Port</button>
+    <div class="interp" id="interp-serial">Used legitimately for hardware flashing tools (Arduino, etc.).</div>
+    <details><summary>Raw JSON</summary><pre id="out-serial">Not yet collected.</pre></details>
+  </div>
+
+  <!-- HID -->
+  <div class="card">
+    <h3>WebHID <span class="status pending">prompt</span></h3>
+    <p>Opens chooser for HID devices.</p>
+    <button onclick="runHID()">Request Device</button>
+    <div class="interp" id="interp-hid">Exposes keyboards, mice, game controllers, and custom HID hardware.</div>
+    <details><summary>Raw JSON</summary><pre id="out-hid">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Battery -->
+  <div class="card">
+    <h3>Battery <span class="status warn">deprecated</span></h3>
+    <p>Battery level, charging state. Removed from most browsers for fingerprinting.</p>
+    <button onclick="runBattery()">Check</button>
+    <div class="interp" id="interp-battery">Battery level was a surprisingly stable cross-site identifier — which is why most browsers removed this API.</div>
+    <details><summary>Raw JSON</summary><pre id="out-battery">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Storage -->
+  <div class="card">
+    <h3>Storage Quota <span class="status ok">no prompt</span></h3>
+    <p>Available persistent + temporary storage.</p>
+    <button onclick="runStorage()">Check</button>
+    <div class="interp" id="interp-storage">Quota size correlates with disk size — adds entropy to a device fingerprint.</div>
+    <details><summary>Raw JSON</summary><pre id="out-storage">Not yet collected.</pre></details>
+  </div>
+
+  <!-- Permissions API overview -->
+  <div class="card">
+    <h3>Permissions API <span class="status ok">no prompt</span></h3>
+    <p>Query the state of every known permission without triggering it.</p>
+    <button onclick="runPermsQuery()">Query All</button>
+    <div class="interp" id="interp-perms">Silently tells any site which permissions you've already granted elsewhere.</div>
+    <details><summary>Raw JSON</summary><pre id="out-perms">Not yet collected.</pre></details>
+  </div>
+
+  <!-- All results aggregate -->
+  <div class="card" style="grid-column: 1 / -1;">
+    <h3>Combined Log</h3>
+    <p>Everything collected this session. Use Export to save JSON locally.</p>
+    <pre id="out-all" style="max-height: 400px;">Empty.</pre>
+  </div>
+
+</div>
+
+<div id="export-bar">
+  <button onclick="exportJSON()">Download JSON</button>
+  <button class="secondary" onclick="copyJSON()">Copy to Clipboard</button>
+  <button class="secondary" onclick="clearAll()">Clear</button>
+  <span class="log-count" id="log-count">0 entries</span>
+</div>
+
+<script>
+const results = {};
+
+function render(id, data) {
+  const el = document.getElementById(id);
+  el.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  const key = id.replace(/^out-/, "");
+  results[key] = { timestamp: new Date().toISOString(), data };
+  document.getElementById("out-all").textContent = JSON.stringify(results, null, 2);
+  document.getElementById("log-count").textContent = Object.keys(results).length + " entries";
+  const interpEl = document.getElementById("interp-" + key);
+  if (interpEl && interpreters[key]) {
+    try {
+      const r = interpreters[key](data);
+      interpEl.className = "interp" + (r.tone ? " " + r.tone : "");
+      interpEl.innerHTML = r.html;
+    } catch (e) { /* ignore interp errors */ }
+  }
+}
+
+function err(id, e) {
+  render(id, { error: e.name || "Error", message: e.message || String(e) });
+}
+
+// --- Interpreters: return { tone: 'good'|'warn'|'bad', html: string } ---
+const interpreters = {
+  passive(d) {
+    if (d.error) return { tone: "bad", html: `Error: ${d.message}` };
+    const bits = [];
+    if (d.userAgentData) bits.push(`<strong>${d.userAgentData.platform}</strong>`);
+    else if (d.platform) bits.push(`<strong>${d.platform}</strong>`);
+    bits.push(`${d.screen.width}×${d.screen.height} @ ${d.window.devicePixelRatio}× DPR`);
+    bits.push(`${d.hardwareConcurrency || "?"} cores`);
+    if (d.deviceMemory) bits.push(`${d.deviceMemory} GB RAM`);
+    bits.push(`timezone <strong>${d.timezone}</strong>`);
+    bits.push(`language <strong>${d.language}</strong>`);
+    return { tone: "warn",
+      html: `Silently collected: ${bits.join(" · ")}.<br>These values combined are unique enough to fingerprint &gt;90% of browsers (see <a href="https://coveryourtracks.eff.org" style="color:var(--accent)">EFF Cover Your Tracks</a>).` };
+  },
+  webrtc(d) {
+    if (d.error) return { tone: "bad", html: `Error: ${d.message}` };
+    if (d.ipv4 && d.ipv4.length) {
+      return { tone: "bad", html: `<strong>Your real local IP leaked:</strong> ${d.ipv4.join(", ")}. Any website can read this silently — no permission needed. This reveals your LAN subnet.` };
+    }
+    if (d.mdnsHostnames && d.mdnsHostnames.length) {
+      return { tone: "good", html: `<strong>Chrome is protecting you.</strong> Real IPs hidden behind ${d.mdnsHostnames.length} mDNS hostname(s) (e.g. <code>${(d.mdnsHostnames[0]||"").slice(0,20)}…</code>). The classic WebRTC leak is closed.` };
+    }
+    return { tone: "warn", html: "No ICE candidates gathered — unusual." };
+  },
+  lna(d) {
+    if (!Array.isArray(d)) return { tone: "warn", html: "No data." };
+    const pills = d.map(r => {
+      if (r.result === "probing…") return `<span class="pill closed">${r.url}: probing…</span>`;
+      const ms = r.ms;
+      let label = "unknown", cls = "closed";
+      if (r.result === "reachable") { label = "alive (read OK)"; cls = "alive"; }
+      else if (r.result === "TimeoutError") { label = `silent drop (${ms}ms)`; cls = "closed"; }
+      else if (ms < 100) { label = `device present (${ms}ms preflight refused)`; cls = "alive"; }
+      else { label = `${r.result} ${ms}ms`; cls = "closed"; }
+      return `<span class="pill ${cls}">${r.url.replace(/^https?:\/\//,"")}: ${label}</span>`;
+    }).join(" ");
+    const alive = d.filter(r => r.ms != null && (r.ms < 100 && r.result !== "reachable" || r.result === "reachable")).length;
+    const note = alive > 0
+      ? `<br><strong>${alive} device(s) detected on your LAN.</strong> That's enough for a tracker to say "this browser sits behind a router with IP X" — a stable fingerprint across public IP changes.`
+      : "<br>No live devices on the probed addresses. Try adding <code>http://192.168.[your-subnet].1/</code> after checking the WebRTC card for your real subnet.";
+    return { tone: alive > 0 ? "warn" : "good", html: pills + note };
+  },
+  ports(d) {
+    if (!Array.isArray(d)) return { tone: "warn", html: "No data." };
+    const open = d.filter(r => r.result === "open-or-responding" || (r.ms < 100 && r.result !== "scanning…" && r.guess !== "closed (fast fail)"));
+    const refused = d.filter(r => r.guess === "closed (fast fail)");
+    const filtered = d.filter(r => r.guess === "filtered (timeout)");
+    const pills = d.map(r => {
+      if (r.result === "scanning…") return `<span class="pill closed">${r.port}: …</span>`;
+      if (r.result === "open-or-responding") return `<span class="pill open">${r.port}: OPEN</span>`;
+      if (r.guess === "closed (fast fail)") return `<span class="pill closed">${r.port}</span>`;
+      return `<span class="pill alive">${r.port}: ?</span>`;
+    }).join(" ");
+    return {
+      tone: open.length ? "bad" : "good",
+      html: pills + `<br><strong>${open.length}</strong> open, <strong>${refused.length}</strong> closed, <strong>${filtered.length}</strong> filtered. Any open service on 127.0.0.1 is discoverable by every site you visit.`
+    };
+  },
+  geo(d) {
+    if (d.error) return { tone: "good", html: `Blocked or unavailable: ${d.message}. Good — location stays private.` };
+    return { tone: "bad", html: `Location shared: <strong>${d.latitude.toFixed(4)}, ${d.longitude.toFixed(4)}</strong> (±${Math.round(d.accuracyMeters)}m). This is GPS-accurate.` };
+  },
+  notif(d) {
+    if (d.permission === "granted") return { tone: "warn", html: "Granted — site can now push OS notifications while you're not looking at the page." };
+    if (d.permission === "denied") return { tone: "good", html: "Denied. Good — no background notifications." };
+    return { tone: "good", html: `Permission state: <strong>${d.permission || "default"}</strong>.` };
+  },
+  media(d) {
+    if (d.error) return { tone: "good", html: `Denied/unavailable: ${d.message}.` };
+    const withLabels = (d.devices || []).filter(x => !x.label.startsWith("("));
+    if (withLabels.length) {
+      const names = withLabels.map(x => x.label).slice(0, 3).join(", ");
+      return { tone: "bad", html: `<strong>${withLabels.length} device labels exposed:</strong> ${names}${withLabels.length > 3 ? "…" : ""}. Device names can uniquely identify you (e.g. "Harry's MacBook Pro Microphone").` };
+    }
+    return { tone: "warn", html: `${d.devices?.length || 0} devices enumerated without labels. Labels only appear after you grant camera/mic permission.` };
+  },
+  clipboard(d) {
+    if (d.error) return { tone: "good", html: `Blocked: ${d.message}.` };
+    return { tone: "bad", html: `<strong>Read ${d.length} characters</strong> from your clipboard: <code>${(d.preview||"").replace(/[<>&]/g,"?").slice(0,80)}</code>` };
+  },
+  bt(d) {
+    if (d.error) return { tone: "good", html: `No device picked or blocked: ${d.message}.` };
+    return { tone: "warn", html: `Paired: <strong>${d.name || "(unnamed)"}</strong> (id ${d.id?.slice(0,12)}…). Site can now scan characteristics.` };
+  },
+  usb(d) {
+    if (d.error) return { tone: "good", html: `No device picked or blocked: ${d.message}.` };
+    return { tone: "bad", html: `USB exposed: <strong>${d.manufacturerName || "?"} ${d.productName || ""}</strong> · VID <code>${d.vendorId?.toString(16).padStart(4,"0")}</code> PID <code>${d.productId?.toString(16).padStart(4,"0")}</code> · serial <code>${d.serialNumber || "(none)"}</code>. Serial is a stable device ID.` };
+  },
+  serial(d) {
+    if (d.error) return { tone: "good", html: `No port picked: ${d.message}.` };
+    return { tone: "warn", html: `Serial port info: <code>${JSON.stringify(d.info)}</code>` };
+  },
+  hid(d) {
+    if (d.error) return { tone: "good", html: `No device picked: ${d.message}.` };
+    if (!Array.isArray(d) || !d.length) return { tone: "good", html: "No devices." };
+    return { tone: "warn", html: `${d.length} HID device(s): ${d.map(x => x.productName || "unnamed").join(", ")}` };
+  },
+  battery(d) {
+    if (d.error) return { tone: "good", html: `Unsupported — ${d.message}. Good: API was removed because it enabled cross-site tracking.` };
+    return { tone: "warn", html: `Battery ${Math.round(d.level*100)}% ${d.charging ? "charging" : "discharging"}. Historically abused for cross-site tracking.` };
+  },
+  storage(d) {
+    if (d.error) return { tone: "good", html: `Error: ${d.message}` };
+    return { tone: "warn", html: `Quota <strong>${d.quotaHuman}</strong>, currently using ${d.usageHuman}. Quota size correlates with disk size — a weak fingerprint signal.` };
+  },
+  perms(d) {
+    if (typeof d !== "object") return { tone: "warn", html: "No data." };
+    const granted = Object.entries(d).filter(([k,v]) => v === "granted").map(([k]) => k);
+    const prompt = Object.values(d).filter(v => v === "prompt").length;
+    const denied = Object.values(d).filter(v => v === "denied").length;
+    const tone = granted.length ? "warn" : "good";
+    const html = granted.length
+      ? `<strong>Already granted to this origin:</strong> ${granted.join(", ")}. ${prompt} will prompt, ${denied} denied.`
+      : `No permissions auto-granted. ${prompt} would prompt, ${denied} already denied. Good baseline.`;
+    return { tone, html };
+  },
+};
+
+// --- Passive fingerprint ---
+function runPassive() {
+  const n = navigator;
+  const s = screen;
+  const data = {
+    userAgent: n.userAgent,
+    userAgentData: n.userAgentData ? {
+      brands: n.userAgentData.brands,
+      mobile: n.userAgentData.mobile,
+      platform: n.userAgentData.platform,
+    } : null,
+    platform: n.platform,
+    language: n.language,
+    languages: n.languages,
+    hardwareConcurrency: n.hardwareConcurrency,
+    deviceMemory: n.deviceMemory,
+    maxTouchPoints: n.maxTouchPoints,
+    cookieEnabled: n.cookieEnabled,
+    doNotTrack: n.doNotTrack,
+    onLine: n.onLine,
+    pdfViewerEnabled: n.pdfViewerEnabled,
+    vendor: n.vendor,
+    screen: {
+      width: s.width, height: s.height,
+      availWidth: s.availWidth, availHeight: s.availHeight,
+      colorDepth: s.colorDepth, pixelDepth: s.pixelDepth,
+      orientation: s.orientation ? s.orientation.type : null,
+    },
+    window: {
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio,
+    },
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timezoneOffset: new Date().getTimezoneOffset(),
+    connection: n.connection ? {
+      effectiveType: n.connection.effectiveType,
+      downlink: n.connection.downlink,
+      rtt: n.connection.rtt,
+      saveData: n.connection.saveData,
+    } : null,
+    plugins: Array.from(n.plugins || []).map(p => p.name),
+    webdriver: n.webdriver,
+    pageOrigin: location.origin,
+    referrer: document.referrer,
+  };
+  render("out-passive", data);
+}
+
+// --- WebRTC local IP leak ---
+async function runWebRTC() {
+  const candidates = [];
+  const ipv4 = new Set();
+  const ipv6 = new Set();
+  const mdnsHosts = new Set();
+  try {
+    const pc = new RTCPeerConnection({ iceServers: [] });
+    pc.createDataChannel("");
+    const finish = () => {
+      render("out-webrtc", {
+        note: mdnsHosts.size && !ipv4.size
+          ? "Chrome is protecting you: real IPs hidden behind mDNS .local hostnames. Disable chrome://flags/#enable-webrtc-hide-local-ips-with-mdns to see real IPs."
+          : ipv4.size ? "Real local IPs leaked — classic WebRTC leak active." : "No candidates gathered.",
+        ipv4: Array.from(ipv4),
+        ipv6: Array.from(ipv6),
+        mdnsHostnames: Array.from(mdnsHosts),
+        rawCandidates: candidates,
+      });
+      try { pc.close(); } catch(_) {}
+    };
+    pc.onicecandidate = e => {
+      if (!e.candidate) { finish(); return; }
+      const raw = e.candidate.candidate;
+      candidates.push(raw);
+      const parts = raw.split(" ");
+      const addr = parts[4];
+      if (!addr) return;
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(addr)) ipv4.add(addr);
+      else if (addr.endsWith(".local")) mdnsHosts.add(addr);
+      else if (addr.includes(":")) ipv6.add(addr);
+    };
+    await pc.setLocalDescription(await pc.createOffer());
+    setTimeout(finish, 3000);
+  } catch (e) { err("out-webrtc", e); }
+}
+
+// --- Local Network Access probe ---
+async function runLNA() {
+  const targets = document.getElementById("lna-targets").value.split(",").map(s => s.trim()).filter(Boolean);
+  const out = targets.map(url => ({ url, result: "probing…", ms: null }));
+  render("out-lna", out);
+  await Promise.all(targets.map(async (url, i) => {
+    const t0 = performance.now();
+    try {
+      await fetch(url, { mode: "no-cors", cache: "no-store", signal: AbortSignal.timeout(3000) });
+      out[i] = { url, result: "reachable", ms: Math.round(performance.now() - t0) };
+    } catch (e) {
+      out[i] = { url, result: e.name, message: e.message, ms: Math.round(performance.now() - t0) };
+    }
+    render("out-lna", out);
+  }));
+}
+
+// --- Localhost port scan ---
+async function runPortScan() {
+  const ports = document.getElementById("ports").value.split(",").map(s => parseInt(s.trim())).filter(Boolean);
+  const out = ports.map(port => ({ port, result: "scanning…", ms: null }));
+  render("out-ports", out);
+  await Promise.all(ports.map(async (port, i) => {
+    const url = `http://127.0.0.1:${port}/`;
+    const t0 = performance.now();
+    try {
+      await fetch(url, { mode: "no-cors", cache: "no-store", signal: AbortSignal.timeout(1500) });
+      out[i] = { port, result: "open-or-responding", ms: Math.round(performance.now() - t0) };
+    } catch (e) {
+      const ms = Math.round(performance.now() - t0);
+      const guess = ms < 200 ? "closed (fast fail)" : ms >= 1500 ? "filtered (timeout)" : "unknown";
+      out[i] = { port, result: e.name, guess, ms };
+    }
+    render("out-ports", out);
+  }));
+}
+
+// --- Geolocation ---
+function runGeo() {
+  if (!navigator.geolocation) return render("out-geo", { error: "unsupported" });
+  navigator.geolocation.getCurrentPosition(
+    p => render("out-geo", {
+      latitude: p.coords.latitude,
+      longitude: p.coords.longitude,
+      accuracyMeters: p.coords.accuracy,
+      altitude: p.coords.altitude,
+      heading: p.coords.heading,
+      speed: p.coords.speed,
+      timestamp: new Date(p.timestamp).toISOString(),
+    }),
+    e => err("out-geo", e),
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+// --- Notifications ---
+async function runNotif() {
+  try {
+    const perm = await Notification.requestPermission();
+    let shown = false;
+    if (perm === "granted") {
+      new Notification("Probe test", { body: "Notification permission granted." });
+      shown = true;
+    }
+    render("out-notif", { permission: perm, notificationShown: shown });
+  } catch (e) { err("out-notif", e); }
+}
+
+// --- Camera / mic ---
+async function runMedia(mode) {
+  try {
+    let stream = null;
+    if (mode === "both") {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const list = devices.map(d => ({
+      kind: d.kind, label: d.label || "(label hidden — permission required)",
+      deviceId: d.deviceId ? d.deviceId.slice(0, 12) + "…" : "",
+      groupId: d.groupId ? d.groupId.slice(0, 12) + "…" : "",
+    }));
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    render("out-media", { permissionGranted: !!stream, devices: list });
+  } catch (e) { err("out-media", e); }
+}
+
+// --- Clipboard ---
+async function runClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    render("out-clipboard", { length: text.length, preview: text.slice(0, 200) });
+  } catch (e) { err("out-clipboard", e); }
+}
+
+// --- Bluetooth ---
+async function runBluetooth() {
+  if (!navigator.bluetooth) return render("out-bt", { error: "Web Bluetooth unsupported" });
+  try {
+    const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [] });
+    render("out-bt", { id: device.id, name: device.name || "(no name)" });
+  } catch (e) { err("out-bt", e); }
+}
+
+// --- USB ---
+async function runUSB() {
+  if (!navigator.usb) return render("out-usb", { error: "WebUSB unsupported" });
+  try {
+    const d = await navigator.usb.requestDevice({ filters: [] });
+    render("out-usb", {
+      vendorId: d.vendorId, productId: d.productId,
+      manufacturerName: d.manufacturerName, productName: d.productName,
+      serialNumber: d.serialNumber,
+      deviceClass: d.deviceClass, deviceSubclass: d.deviceSubclass,
+    });
+  } catch (e) { err("out-usb", e); }
+}
+
+// --- Serial ---
+async function runSerial() {
+  if (!navigator.serial) return render("out-serial", { error: "Web Serial unsupported" });
+  try {
+    const port = await navigator.serial.requestPort();
+    render("out-serial", { info: port.getInfo() });
+  } catch (e) { err("out-serial", e); }
+}
+
+// --- HID ---
+async function runHID() {
+  if (!navigator.hid) return render("out-hid", { error: "WebHID unsupported" });
+  try {
+    const devs = await navigator.hid.requestDevice({ filters: [] });
+    render("out-hid", devs.map(d => ({
+      vendorId: d.vendorId, productId: d.productId, productName: d.productName,
+      collections: d.collections.length,
+    })));
+  } catch (e) { err("out-hid", e); }
+}
+
+// --- Battery ---
+async function runBattery() {
+  if (!navigator.getBattery) return render("out-battery", { error: "Battery API unsupported in this browser" });
+  try {
+    const b = await navigator.getBattery();
+    render("out-battery", {
+      charging: b.charging, level: b.level,
+      chargingTime: b.chargingTime, dischargingTime: b.dischargingTime,
+    });
+  } catch (e) { err("out-battery", e); }
+}
+
+// --- Storage ---
+async function runStorage() {
+  try {
+    const est = await navigator.storage.estimate();
+    render("out-storage", {
+      quotaBytes: est.quota, usageBytes: est.usage,
+      quotaHuman: (est.quota / 1e9).toFixed(2) + " GB",
+      usageHuman: (est.usage / 1e6).toFixed(2) + " MB",
+      usageDetails: est.usageDetails || null,
+      persisted: await navigator.storage.persisted(),
+    });
+  } catch (e) { err("out-storage", e); }
+}
+
+// --- Permissions API ---
+async function runPermsQuery() {
+  const names = [
+    "geolocation","notifications","push","midi","camera","microphone",
+    "background-fetch","background-sync","persistent-storage","ambient-light-sensor",
+    "accelerometer","gyroscope","magnetometer","screen-wake-lock","nfc",
+    "display-capture","accessibility-events","clipboard-read","clipboard-write",
+    "payment-handler","idle-detection","periodic-background-sync","system-wake-lock",
+    "storage-access","window-management","local-fonts"
+  ];
+  const out = {};
+  for (const name of names) {
+    try {
+      const r = await navigator.permissions.query({ name });
+      out[name] = r.state;
+    } catch (e) {
+      out[name] = "unsupported";
+    }
+  }
+  render("out-perms", out);
+}
+
+// --- Export ---
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(results, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `browser-probe-${Date.now()}.json`;
+  a.click();
+}
+async function copyJSON() {
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(results, null, 2));
+    alert("Copied to clipboard.");
+  } catch (e) { alert("Copy failed: " + e.message); }
+}
+function clearAll() {
+  for (const k in results) delete results[k];
+  document.querySelectorAll("pre").forEach(p => p.textContent = "Not yet collected.");
+  document.querySelectorAll(".interp").forEach(d => {
+    d.className = "interp";
+    d.textContent = "Not yet collected.";
+  });
+  document.getElementById("out-all").textContent = "Empty.";
+  document.getElementById("log-count").textContent = "0 entries";
+}
+</script>
+</body>
+</html>
