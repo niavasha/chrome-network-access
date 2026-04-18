@@ -387,7 +387,7 @@ const interpreters = {
     if (d.audioFingerprint) heavy.push(`audio FP <code>${esc(d.audioFingerprint.slice(0,20))}…</code>`);
     if (d.fontCount) heavy.push(`<strong>${d.fontCount} fonts</strong> detected`);
     return { tone: "bad",
-      html: `<strong>Silently collected:</strong> ${bits.join(" · ")}.<br><br><strong style="color:var(--err)">High-entropy fingerprint signals:</strong> ${heavy.join(" · ") || "(none)"}.<br><br>Combined, these produce a near-unique identifier for your device — <em>no permission required, no way to block at the browser layer</em>. Canvas, WebGL renderer, audio, and fonts together routinely add 30+ bits of entropy, which is why you were unique among 317,437 browsers on <a href="https://coveryourtracks.eff.org" style="color:var(--accent)">EFF Cover Your Tracks</a>.` };
+      html: `<strong>Silently collected:</strong> ${bits.join(" · ")}.<br><br><strong style="color:var(--err)">High-entropy fingerprint signals:</strong> ${heavy.join(" · ") || "(none)"}.<br><br>Combined, these produce a near-unique identifier for your device — <em>no permission required, no way to block at the browser layer</em>. Canvas, WebGL renderer, audio, and fonts together typically contribute 30+ bits of entropy, which is enough to single most browsers out among hundreds of thousands. Cross-check your own entropy at <a href="https://coveryourtracks.eff.org" style="color:var(--accent)">EFF Cover Your Tracks</a>.` };
   },
   webrtc(d) {
     if (d.error) return { tone: "bad", html: `Error: ${d.message}` };
@@ -493,7 +493,7 @@ const interpreters = {
     const withLabels = (d.devices || []).filter(x => !x.label.startsWith("("));
     if (withLabels.length) {
       const names = withLabels.map(x => esc(x.label)).slice(0, 3).join(", ");
-      return { tone: "bad", html: `<strong>${withLabels.length} device labels exposed:</strong> ${names}${withLabels.length > 3 ? "…" : ""}. Device names can uniquely identify you (e.g. "Harry's MacBook Pro Microphone").` };
+      return { tone: "bad", html: `<strong>${withLabels.length} device labels exposed:</strong> ${names}${withLabels.length > 3 ? "…" : ""}. Device names are often personalised by the OS (e.g. user's first name embedded in Bluetooth or speaker names) and can uniquely identify the person using the machine, not just the hardware.` };
     }
     return { tone: "warn", html: `${d.devices?.length || 0} devices enumerated without labels. Labels only appear after you grant camera/mic permission.` };
   },
