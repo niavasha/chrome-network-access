@@ -169,8 +169,8 @@
 
   <!-- Port scan on localhost -->
   <div class="card">
-    <h3>Localhost Port Scan <span class="status err">mostly silent</span></h3>
-    <p>Probe common ports on <code>127.0.0.1</code>. Timing of fetch failures reveals which ports are open, closed, or filtered — and in many Chrome builds this is <strong>still happening without any prompt</strong>.</p>
+    <h3>Localhost Port Scan <span class="status err">silent in stable Chrome</span></h3>
+    <p>Probe common ports on <code>127.0.0.1</code>. Timing of fetch failures reveals which ports are open, closed, or filtered. In current default Chrome, this happens <strong>without any prompt</strong> regardless of origin.</p>
     <details style="margin-bottom: 8px;" open><summary>Why would a website scan your ports? (real, not theoretical)</summary>
       <div style="color: var(--muted); font-size: 12px; line-height: 1.55; padding: 8px 0 0;">
         Fair question. Here's what's actually been found in the wild:
@@ -181,7 +181,7 @@
           <li><strong>Developer-machine fingerprinting</strong> — open <code>5432</code> (Postgres), <code>27017</code> (Mongo), <code>11434</code> (Ollama), <code>3000</code> (Node dev) strongly implies "this is a developer" — a different risk profile for fraud scoring and a different ad audience.</li>
           <li><strong>DNS-rebinding exploits</strong> — once a site maps your open ports, it can use DNS rebinding to actually talk to those services (unauthenticated Jupyter notebooks, dev databases, router admin panels).</li>
         </ul>
-        <strong>The protection situation is mixed.</strong> The Local Network Access specification covers loopback (<code>127.0.0.1</code>), but loopback enforcement is rolling out slowly and in many Chrome builds still lets these scans through without a prompt — which is why this card reveals what your machine currently exposes. Worth knowing about.
+        <strong>Status today: still silent.</strong> The Local Network Access specification covers loopback (<code>127.0.0.1</code>), but Chrome deliberately deferred loopback enforcement in the 130 rollout — too many legitimate developer, Electron, and local-agent workflows depend on localhost access. In default stable Chrome, these probes fire with no prompt. Loopback gating is available behind <code>chrome://flags/#local-network-access-checks</code> and via enterprise policy, but neither is on by default. This card reveals what your machine currently exposes — which is why it matters.
       </div>
     </details>
     <input type="text" id="ports" value="22,80,443,3000,3306,5000,5432,5900,6379,8000,8080,8443,9000,11434,27017">
